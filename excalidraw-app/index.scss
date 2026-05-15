@@ -80,6 +80,79 @@
   }
 }
 
+.excalidraw-app {
+  display: flex;
+  flex-direction: column;
+
+  .excalidraw-app-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem 0;
+    background: var(--color-surface-lowest);
+    border-bottom: 1px solid var(--color-surface-low);
+  }
+
+  .excalidraw-app-tabs__list {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .excalidraw-app-tabs__tab,
+  .excalidraw-app-tabs__add {
+    border: 1px solid var(--color-surface-low);
+    background: var(--color-surface-mid);
+    color: var(--color-on-surface);
+    border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .excalidraw-app-tabs__tab {
+    max-width: 14rem;
+    padding: 0 0.75rem;
+  }
+
+  .excalidraw-app-tabs__tab.is-active {
+    background: var(--color-surface-high);
+    border-bottom-color: var(--color-surface-high);
+  }
+
+  .excalidraw-app-tabs__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .excalidraw-app-tabs__dirty {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--color-primary);
+    flex: 0 0 auto;
+  }
+
+  .excalidraw-app-tabs__close {
+    font-size: 1rem;
+    line-height: 1;
+    opacity: 0.7;
+  }
+
+  .excalidraw-app-tabs__add {
+    width: 2rem;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+}
+
 .excalidraw-app.is-collaborating {
   [data-testid="clear-canvas-button"] {
     display: none;

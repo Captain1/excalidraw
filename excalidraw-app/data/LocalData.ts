@@ -43,6 +43,10 @@ import { SAVE_TO_LOCAL_STORAGE_TIMEOUT, STORAGE_KEYS } from "../app_constants";
 
 import { FileManager } from "./FileManager";
 import { FileStatusStore } from "./fileStatusStore";
+import {
+  saveWorkspaceToLocalStorage,
+  type WorkspaceDocumentRecord,
+} from "./localStorage";
 import { Locker } from "./Locker";
 import { updateBrowserStateVersion } from "./tabSync";
 
@@ -120,9 +124,16 @@ export class LocalData {
       elements: readonly ExcalidrawElement[],
       appState: AppState,
       files: BinaryFiles,
+      workspace: {
+        documents: readonly WorkspaceDocumentRecord[];
+        activeDocumentId: string | null;
+      },
       onFilesSaved: () => void,
     ) => {
       saveDataStateToLocalStorage(elements, appState);
+      await saveWorkspaceToLocalStorage(workspace);
+      updateBrowserStateVersion(STORAGE_KEYS.VERSION_DATA_STATE);
+      updateBrowserStateVersion(STORAGE_KEYS.VERSION_WORKSPACE);
 
       await this.fileStorage.saveFiles({
         elements,
@@ -138,16 +149,29 @@ export class LocalData {
     elements: readonly ExcalidrawElement[],
     appState: AppState,
     files: BinaryFiles,
+    workspace: {
+      documents: readonly WorkspaceDocumentRecord[];
+      activeDocumentId: string | null;
+    },
     onFilesSaved: () => void,
   ) => {
     // we need to make the `isSavePaused` check synchronously (undebounced)
     if (!this.isSavePaused()) {
-      this._save(elements, appState, files, onFilesSaved);
+      this._save(elements, appState, files, workspace, onFilesSaved);
     }
   };
 
   static flushSave = () => {
     this._save.flush();
+  };
+
+  static saveWorkspace = async (workspace: {
+    documents: readonly WorkspaceDocumentRecord[];
+    activeDocumentId: string | null;
+  }) => {
+    await saveWorkspaceToLocalStorage(workspace);
+    updateBrowserStateVersion(STORAGE_KEYS.VERSION_WORKSPACE);
+    updateBrowserStateVersion(STORAGE_KEYS.VERSION_DATA_STATE);
   };
 
   private static locker = new Locker<SavingLockTypes>();

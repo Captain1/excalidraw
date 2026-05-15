@@ -2,8 +2,10 @@ import {
   loginIcon,
   ExcalLogo,
   eyeIcon,
+  LoadIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { MainMenu } from "@excalidraw/excalidraw/index";
+import { useI18n } from "@excalidraw/excalidraw/i18n";
 import React from "react";
 
 import { isDevEnv } from "@excalidraw/common";
@@ -17,15 +19,24 @@ import { saveDebugState } from "./DebugCanvas";
 
 export const AppMainMenu: React.FC<{
   onCollabDialogOpen: () => any;
+  onLoadScene: () => void;
   isCollaborating: boolean;
   isCollabEnabled: boolean;
   theme: Theme | "system";
   setTheme: (theme: Theme | "system") => void;
   refresh: () => void;
 }> = React.memo((props) => {
+  const { t } = useI18n();
+
   return (
     <MainMenu>
-      <MainMenu.DefaultItems.LoadScene />
+      <MainMenu.Item
+        icon={LoadIcon}
+        onSelect={props.onLoadScene}
+        data-testid="load-button"
+      >
+        {t("buttons.load")}
+      </MainMenu.Item>
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
       <MainMenu.DefaultItems.SaveAsImage />

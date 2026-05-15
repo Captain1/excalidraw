@@ -1,4 +1,3 @@
-import Trans from "@excalidraw/excalidraw/components/Trans";
 import { t } from "@excalidraw/excalidraw/i18n";
 import * as Sentry from "@sentry/browser";
 import React from "react";
@@ -13,6 +12,26 @@ export class TopErrorBoundary extends React.Component<
   any,
   TopErrorBoundaryState
 > {
+  private renderTranslatedAction(
+    translation: string,
+    action: (label: string) => React.ReactNode,
+  ) {
+    const match = translation.match(/^(.*)<button>(.*)<\/button>(.*)$/);
+
+    if (!match) {
+      return translation;
+    }
+
+    const [, before, label, after] = match;
+    return (
+      <>
+        {before}
+        {action(label)}
+        {after}
+      </>
+    );
+  }
+
   state: TopErrorBoundaryState = {
     hasError: false,
     sentryEventId: "",
@@ -77,17 +96,19 @@ export class TopErrorBoundary extends React.Component<
       <div className="ErrorSplash excalidraw">
         <div className="ErrorSplash-messageContainer">
           <div className="ErrorSplash-paragraph bigger align-center">
-            <Trans
-              i18nKey="errorSplash.headingMain"
-              button={(el) => (
-                <button onClick={() => window.location.reload()}>{el}</button>
-              )}
-            />
+            {this.renderTranslatedAction(
+              t("errorSplash.headingMain"),
+              (label) => (
+                <button onClick={() => window.location.reload()}>
+                  {label}
+                </button>
+              ),
+            )}
           </div>
           <div className="ErrorSplash-paragraph align-center">
-            <Trans
-              i18nKey="errorSplash.clearCanvasMessage"
-              button={(el) => (
+            {this.renderTranslatedAction(
+              t("errorSplash.clearCanvasMessage"),
+              (label) => (
                 <button
                   onClick={() => {
                     try {
@@ -98,10 +119,10 @@ export class TopErrorBoundary extends React.Component<
                     }
                   }}
                 >
-                  {el}
+                  {label}
                 </button>
-              )}
-            />
+              ),
+            )}
             <br />
             <div className="smaller">
               <span role="img" aria-label="warning">
@@ -120,12 +141,14 @@ export class TopErrorBoundary extends React.Component<
               })}
             </div>
             <div className="ErrorSplash-paragraph">
-              <Trans
-                i18nKey="errorSplash.openIssueMessage"
-                button={(el) => (
-                  <button onClick={() => this.createGithubIssue()}>{el}</button>
-                )}
-              />
+              {this.renderTranslatedAction(
+                t("errorSplash.openIssueMessage"),
+                (label) => (
+                  <button onClick={() => this.createGithubIssue()}>
+                    {label}
+                  </button>
+                ),
+              )}
             </div>
             <div className="ErrorSplash-paragraph">
               <div className="ErrorSplash-details">

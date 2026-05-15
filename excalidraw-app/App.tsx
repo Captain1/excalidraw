@@ -7,9 +7,13 @@ import {
   useEditorInterface,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
+  hashElementsVersion,
 } from "@excalidraw/excalidraw";
 import { trackEvent } from "@excalidraw/excalidraw/analytics";
-import { getDefaultAppState } from "@excalidraw/excalidraw/appState";
+import {
+  clearAppStateForLocalStorage,
+  getDefaultAppState,
+} from "@excalidraw/excalidraw/appState";
 import {
   CommandPalette,
   DEFAULT_CATEGORIES,
@@ -22,6 +26,7 @@ import Trans from "@excalidraw/excalidraw/components/Trans";
 import {
   APP_NAME,
   EVENT,
+  MIME_TYPES,
   THEME,
   VERSION_TIMEOUT,
   debounce,
@@ -29,13 +34,16 @@ import {
   getFrame,
   isTestEnv,
   preventUnload,
-  resolvablePromise,
   isRunningInIframe,
   isDevEnv,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  loadFromBlob,
+  loadSceneOrLibraryFromBlob,
+} from "@excalidraw/excalidraw/data/blob";
+import { fileOpen } from "@excalidraw/excalidraw/data/filesystem";
 import { t } from "@excalidraw/excalidraw/i18n";
 
 import {
@@ -65,6 +73,7 @@ import {
 import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
+  ExcalidrawElement,
   FileId,
   NonDeletedExcalidrawElement,
   OrderedExcalidrawElement,
@@ -78,7 +87,6 @@ import type {
   ExcalidrawProps,
 } from "@excalidraw/excalidraw/types";
 import type { ResolutionType } from "@excalidraw/common/utility-types";
-import type { ResolvablePromise } from "@excalidraw/common/utils";
 
 import CustomStats from "./CustomStats";
 import {
@@ -120,6 +128,10 @@ import { FileStatusStore } from "./data/fileStatusStore";
 import {
   importFromLocalStorage,
   importUsernameFromLocalStorage,
+  importWorkspaceFromLocalStorage,
+  type WorkspaceDocumentRecord as DocumentRecord,
+  type WorkspaceDocumentSnapshot as DocumentSnapshot,
+  type WorkspaceDocumentSource as DocumentSource,
 } from "./data/localStorage";
 
 import { loadFilesFromFirebase } from "./data/firebase";
@@ -212,6 +224,182 @@ const shareableLinkConfirmDialog = {
   actionLabel: t("overwriteConfirm.modal.shareableLink.button"),
   color: "danger",
 } as const;
+
+const createDocumentId = () => `doc-${Math.random().toString(36).slice(2, 10)}`;
+
+const createBlankDocumentSnapshot = (): DocumentSnapshot => ({
+  elements: [],
+  appState: {
+    name: null,
+  },
+  files: {},
+});
+
+const getDocumentFiles = (
+  elements: readonly ExcalidrawElement[],
+  files: BinaryFiles,
+): BinaryFiles => {
+  return elements.reduce((acc, element) => {
+    if (
+      isInitializedImageElement(element) &&
+      element.fileId &&
+      files[element.fileId]
+    ) {
+      acc[element.fileId] = files[element.fileId];
+    }
+    return acc;
+  }, {} as BinaryFiles);
+};
+
+const getActiveDocument = (
+  documents: readonly DocumentRecord[],
+  activeDocumentId: string | null,
+) => {
+  return documents.find((document) => document.id === activeDocumentId) ?? null;
+};
+
+const sanitizeAppStateForDocument = (
+  appState: Partial<AppState> | null | undefined,
+): Partial<AppState> => {
+  if (!appState) {
+    return { name: null };
+  }
+
+  const sanitized = {
+    ...restoreAppState(
+      clearAppStateForLocalStorage(appState),
+      getDefaultAppState() as AppState,
+    ),
+    name: appState.name ?? null,
+    fileHandle: appState.fileHandle ?? null,
+  } as Partial<AppState>;
+
+  delete sanitized.openDialog;
+  delete sanitized.openMenu;
+  delete sanitized.openPopup;
+  delete sanitized.contextMenu;
+  delete sanitized.toast;
+  delete sanitized.errorMessage;
+  delete sanitized.isLoading;
+  delete sanitized.collaborators;
+  delete sanitized.userToFollow;
+  delete sanitized.followedBy;
+  delete sanitized.selectedElementsAreBeingDragged;
+  delete sanitized.selectionElement;
+  delete sanitized.suggestedBinding;
+  delete sanitized.snapLines;
+  delete sanitized.hoveredElementIds;
+  delete sanitized.elementsToHighlight;
+  delete sanitized.activeEmbeddable;
+  delete sanitized.newElement;
+  delete sanitized.multiElement;
+  delete sanitized.resizingElement;
+  delete sanitized.editingTextElement;
+  delete sanitized.selectedLinearElement;
+  delete sanitized.searchMatches;
+  delete sanitized.editingFrame;
+  delete sanitized.frameToHighlight;
+  delete sanitized.activeLockedId;
+  delete sanitized.originSnapOffset;
+  delete sanitized.width;
+  delete sanitized.height;
+  delete sanitized.offsetLeft;
+  delete sanitized.offsetTop;
+
+  return sanitized;
+};
+
+const createDocumentRecord = (opts?: {
+  title?: string | null;
+  source?: DocumentSource;
+  snapshot?: Partial<DocumentSnapshot>;
+}): DocumentRecord => ({
+  id: createDocumentId(),
+  title: opts?.title || t("labels.untitled"),
+  source: opts?.source || "blank",
+  dirty: false,
+  updatedAt: Date.now(),
+  snapshot: {
+    ...createBlankDocumentSnapshot(),
+    ...opts?.snapshot,
+    appState: sanitizeAppStateForDocument(opts?.snapshot?.appState),
+  },
+});
+
+const updateDocumentRecords = (
+  documents: readonly DocumentRecord[],
+  documentId: string,
+  snapshot: DocumentSnapshot,
+  opts?: { dirty?: boolean; title?: string | null },
+): DocumentRecord[] => {
+  return documents.map((document) =>
+    document.id === documentId
+      ? {
+          ...document,
+          title:
+            opts?.title ??
+            snapshot.appState.name ??
+            document.title ??
+            t("labels.untitled"),
+          dirty: opts?.dirty ?? document.dirty,
+          updatedAt: Date.now(),
+          snapshot: {
+            elements: snapshot.elements,
+            files: snapshot.files,
+            appState: sanitizeAppStateForDocument(snapshot.appState),
+          },
+        }
+      : document,
+  );
+};
+
+const areDocumentFilesEqual = (
+  prevFiles: BinaryFiles | null | undefined,
+  nextFiles: BinaryFiles | null | undefined,
+) => {
+  const prev = prevFiles ?? {};
+  const next = nextFiles ?? {};
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+
+  if (prevKeys.length !== nextKeys.length) {
+    return false;
+  }
+
+  return prevKeys.every(
+    (key) => key in next && prev[key as FileId] === next[key as FileId],
+  );
+};
+
+const areDocumentSnapshotsEqual = (
+  prevSnapshot: DocumentSnapshot,
+  nextSnapshot: DocumentSnapshot,
+) => {
+  const prevAppState = sanitizeAppStateForDocument(prevSnapshot.appState);
+  const nextAppState = sanitizeAppStateForDocument(nextSnapshot.appState);
+
+  return (
+    prevSnapshot.elements.length === nextSnapshot.elements.length &&
+    hashElementsVersion(prevSnapshot.elements) ===
+      hashElementsVersion(nextSnapshot.elements) &&
+    JSON.stringify(prevAppState) === JSON.stringify(nextAppState) &&
+    areDocumentFilesEqual(prevSnapshot.files, nextSnapshot.files)
+  );
+};
+
+const getAllDocumentFileIds = (documents: readonly DocumentRecord[]) => {
+  return Array.from(
+    new Set(
+      documents.flatMap((document) =>
+        document.snapshot.elements.flatMap((element) =>
+          isInitializedImageElement(element) && element.fileId
+            ? [element.fileId]
+            : [],
+        ),
+      ),
+    ),
+  );
+};
 
 const initializeScene = async (opts: {
   collabAPI: CollabAPI | null;
@@ -382,17 +570,125 @@ const ExcalidrawWrapper = () => {
   const [langCode, setLangCode] = useAppLangCode();
 
   const editorInterface = useEditorInterface();
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const switchingDocumentRef = useRef(false);
+  const documentsRef = useRef<DocumentRecord[]>([]);
+  const activeDocumentIdRef = useRef<string | null>(null);
 
-  // initial state
-  // ---------------------------------------------------------------------------
+  const activeDocument = useMemo(
+    () => getActiveDocument(documents, activeDocumentId),
+    [documents, activeDocumentId],
+  );
 
-  const initialStatePromiseRef = useRef<{
-    promise: ResolvablePromise<ExcalidrawInitialDataState | null>;
-  }>({ promise: null! });
-  if (!initialStatePromiseRef.current.promise) {
-    initialStatePromiseRef.current.promise =
-      resolvablePromise<ExcalidrawInitialDataState | null>();
-  }
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
+
+  useEffect(() => {
+    activeDocumentIdRef.current = activeDocumentId;
+  }, [activeDocumentId]);
+
+  const createInitialDocument = useCallback(
+    (scene: ExcalidrawInitialDataState | null) => {
+      return createDocumentRecord({
+        title: scene?.appState?.name ?? null,
+        source: "blank",
+        snapshot: {
+          elements: scene?.elements ?? [],
+          appState: scene?.appState ?? { name: null },
+          files: scene?.files ?? {},
+        },
+      });
+    },
+    [],
+  );
+
+  const getSnapshotFromAPI = useCallback(
+    (api: ExcalidrawImperativeAPI): DocumentSnapshot => {
+      const elements = api.getSceneElementsIncludingDeleted();
+      return {
+        elements,
+        appState: sanitizeAppStateForDocument(api.getAppState()),
+        files: getDocumentFiles(elements, api.getFiles()),
+      };
+    },
+    [],
+  );
+
+  const applyDocumentToEditor = useCallback(
+    (document: DocumentRecord) => {
+      if (!excalidrawAPI) {
+        return;
+      }
+
+      switchingDocumentRef.current = true;
+      excalidrawAPI.resetScene({ resetLoadingState: true });
+      const restoredAppState = restoreAppState(
+        clearAppStateForLocalStorage(document.snapshot.appState),
+        getDefaultAppState() as AppState,
+      );
+      const {
+        viewModeEnabled: _vme,
+        zenModeEnabled: _zne,
+        gridModeEnabled: _gme,
+        objectsSnapModeEnabled: _osme,
+        ...restAppState
+      } = restoredAppState;
+      excalidrawAPI.updateScene({
+        elements: document.snapshot.elements,
+        appState: {
+          ...restAppState,
+          name: document.snapshot.appState.name ?? null,
+          isLoading: false,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      if (Object.keys(document.snapshot.files).length) {
+        excalidrawAPI.addFiles(Object.values(document.snapshot.files));
+      }
+      excalidrawAPI.history.clear();
+      switchingDocumentRef.current = false;
+    },
+    [excalidrawAPI],
+  );
+
+  const persistWorkspace = useCallback(
+    (
+      nextDocuments: readonly DocumentRecord[],
+      nextActiveDocumentId: string | null,
+    ) => {
+      if (!nextDocuments.length) {
+        return;
+      }
+      LocalData.saveWorkspace({
+        documents: nextDocuments,
+        activeDocumentId: nextActiveDocumentId,
+      }).catch((error) => {
+        console.error(error);
+      });
+    },
+    [],
+  );
+
+  const captureCurrentDocument = useCallback(() => {
+    if (!excalidrawAPI || !activeDocumentId) {
+      return documents;
+    }
+
+    const nextDocuments = updateDocumentRecords(
+      documents,
+      activeDocumentId,
+      getSnapshotFromAPI(excalidrawAPI),
+      {
+        dirty: getActiveDocument(documents, activeDocumentId)?.dirty,
+        title: excalidrawAPI.getAppState().name ?? null,
+      },
+    );
+    documentsRef.current = nextDocuments;
+    setDocuments(nextDocuments);
+    return nextDocuments;
+  }, [activeDocumentId, documents, excalidrawAPI, getSnapshotFromAPI]);
 
   const debugCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -512,7 +808,9 @@ const ExcalidrawWrapper = () => {
           // on fresh load, clear unused files from IDB (from previous
           // session)
           LocalData.fileStorage.clearObsoleteFiles({
-            currentFileIds: fileIds,
+            currentFileIds: getAllDocumentFileIds(documentsRef.current).length
+              ? getAllDocumentFileIds(documentsRef.current)
+              : fileIds,
           });
         }
       }
@@ -526,8 +824,27 @@ const ExcalidrawWrapper = () => {
     }
 
     initializeScene({ collabAPI, excalidrawAPI }).then(async (data) => {
+      const restoredWorkspace = await importWorkspaceFromLocalStorage();
+      const initialDocuments = restoredWorkspace?.documents.length
+        ? restoredWorkspace.documents
+        : [createInitialDocument(data.scene)];
+      const initialActiveDocument =
+        getActiveDocument(
+          initialDocuments,
+          restoredWorkspace?.activeDocumentId ??
+            initialDocuments[0]?.id ??
+            null,
+        ) ?? initialDocuments[0];
+
+      documentsRef.current = initialDocuments;
+      activeDocumentIdRef.current = initialActiveDocument?.id ?? null;
       loadImages(data, /* isInitialLoad */ true);
-      initialStatePromiseRef.current.promise.resolve(data.scene);
+      setDocuments(initialDocuments);
+      setActiveDocumentId(initialActiveDocument?.id ?? null);
+      if (initialActiveDocument) {
+        applyDocumentToEditor(initialActiveDocument);
+      }
+      persistWorkspace(initialDocuments, initialActiveDocument?.id ?? null);
     });
 
     const onHashChange = async (event: HashChangeEvent) => {
@@ -544,13 +861,32 @@ const ExcalidrawWrapper = () => {
 
         initializeScene({ collabAPI, excalidrawAPI }).then((data) => {
           loadImages(data);
-          if (data.scene) {
-            excalidrawAPI.updateScene({
+          const currentActiveDocumentId = activeDocumentIdRef.current;
+          if (data.scene && currentActiveDocumentId) {
+            const nextSnapshot: DocumentSnapshot = {
               elements: restoreElements(data.scene.elements, null, {
                 repairBindings: true,
               }),
               appState: restoreAppState(data.scene.appState, null),
-              captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+              files: data.scene.files ?? {},
+            };
+            const nextDocuments = updateDocumentRecords(
+              documentsRef.current,
+              currentActiveDocumentId,
+              nextSnapshot,
+              {
+                dirty: false,
+                title: nextSnapshot.appState.name ?? null,
+              },
+            );
+            setDocuments(nextDocuments);
+            applyDocumentToEditor({
+              id: currentActiveDocumentId,
+              title: nextSnapshot.appState.name ?? t("labels.untitled"),
+              source: "blank",
+              dirty: false,
+              updatedAt: Date.now(),
+              snapshot: nextSnapshot,
             });
           }
         });
@@ -566,14 +902,34 @@ const ExcalidrawWrapper = () => {
         ((collabAPI && !collabAPI.isCollaborating()) || isCollabDisabled)
       ) {
         // don't sync if local state is newer or identical to browser state
-        if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)) {
-          const localDataState = importFromLocalStorage();
+        if (
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_WORKSPACE) ||
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)
+        ) {
+          importWorkspaceFromLocalStorage().then((workspace) => {
+            if (workspace?.documents.length) {
+              setDocuments(workspace.documents);
+              const nextActiveDocument =
+                getActiveDocument(
+                  workspace.documents,
+                  workspace.activeDocumentId ??
+                    workspace.documents[0]?.id ??
+                    null,
+                ) ?? workspace.documents[0];
+              setActiveDocumentId(nextActiveDocument?.id ?? null);
+              if (nextActiveDocument) {
+                applyDocumentToEditor(nextActiveDocument);
+              }
+            } else {
+              const localDataState = importFromLocalStorage();
+              excalidrawAPI.updateScene({
+                ...localDataState,
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
+          });
           const username = importUsernameFromLocalStorage();
           setLangCode(getPreferredLanguage());
-          excalidrawAPI.updateScene({
-            ...localDataState,
-            captureUpdate: CaptureUpdateAction.NEVER,
-          });
           LibraryIndexedDBAdapter.load().then((data) => {
             if (data) {
               excalidrawAPI.updateLibrary({
@@ -648,7 +1004,16 @@ const ExcalidrawWrapper = () => {
         false,
       );
     };
-  }, [isCollabDisabled, collabAPI, excalidrawAPI, setLangCode, loadImages]);
+  }, [
+    isCollabDisabled,
+    collabAPI,
+    excalidrawAPI,
+    setLangCode,
+    loadImages,
+    applyDocumentToEditor,
+    createInitialDocument,
+    persistWorkspace,
+  ]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
@@ -680,40 +1045,78 @@ const ExcalidrawWrapper = () => {
     appState: AppState,
     files: BinaryFiles,
   ) => {
+    if (switchingDocumentRef.current) {
+      return;
+    }
+
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
 
+    const nextSnapshot: DocumentSnapshot = {
+      elements,
+      appState,
+      files: getDocumentFiles(elements, files),
+    };
+    const currentDocument = activeDocumentId
+      ? getActiveDocument(documents, activeDocumentId)
+      : null;
+    const didDocumentSnapshotChange = currentDocument
+      ? !areDocumentSnapshotsEqual(currentDocument.snapshot, nextSnapshot)
+      : false;
+    const nextDocuments =
+      activeDocumentId && didDocumentSnapshotChange
+        ? updateDocumentRecords(documents, activeDocumentId, nextSnapshot, {
+            dirty: true,
+            title: appState.name ?? null,
+          })
+        : documents;
+
+    if (activeDocumentId && didDocumentSnapshotChange) {
+      setDocuments(nextDocuments);
+    }
+
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time
-    if (!LocalData.isSavePaused()) {
-      LocalData.save(elements, appState, files, () => {
-        if (excalidrawAPI) {
-          let didChange = false;
+    if (didDocumentSnapshotChange && !LocalData.isSavePaused()) {
+      LocalData.save(
+        elements,
+        appState,
+        files,
+        {
+          documents: nextDocuments,
+          activeDocumentId,
+        },
+        () => {
+          if (excalidrawAPI) {
+            let didChange = false;
 
-          const elements = excalidrawAPI
-            .getSceneElementsIncludingDeleted()
-            .map((element) => {
-              if (
-                LocalData.fileStorage.shouldUpdateImageElementStatus(element)
-              ) {
-                const newElement = newElementWith(element, { status: "saved" });
-                if (newElement !== element) {
-                  didChange = true;
+            const elements = excalidrawAPI
+              .getSceneElementsIncludingDeleted()
+              .map((element) => {
+                if (
+                  LocalData.fileStorage.shouldUpdateImageElementStatus(element)
+                ) {
+                  const newElement = newElementWith(element, {
+                    status: "saved",
+                  });
+                  if (newElement !== element) {
+                    didChange = true;
+                  }
+                  return newElement;
                 }
-                return newElement;
-              }
-              return element;
-            });
+                return element;
+              });
 
-          if (didChange) {
-            excalidrawAPI.updateScene({
-              elements,
-              captureUpdate: CaptureUpdateAction.NEVER,
-            });
+            if (didChange) {
+              excalidrawAPI.updateScene({
+                elements,
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+            }
           }
-        }
-      });
+        },
+      );
     }
 
     // Render the debug scene if the debug canvas is available
@@ -729,6 +1132,111 @@ const ExcalidrawWrapper = () => {
 
   const [latestShareableLink, setLatestShareableLink] = useState<string | null>(
     null,
+  );
+
+  const switchToDocument = useCallback(
+    (nextDocumentId: string) => {
+      if (!excalidrawAPI || nextDocumentId === activeDocumentId) {
+        return;
+      }
+
+      const nextDocuments = captureCurrentDocument();
+      const nextDocument = getActiveDocument(nextDocuments, nextDocumentId);
+      if (!nextDocument) {
+        return;
+      }
+
+      setActiveDocumentId(nextDocumentId);
+      applyDocumentToEditor(nextDocument);
+      persistWorkspace(nextDocuments, nextDocumentId);
+    },
+    [
+      activeDocumentId,
+      applyDocumentToEditor,
+      captureCurrentDocument,
+      excalidrawAPI,
+      persistWorkspace,
+    ],
+  );
+
+  const createBlankDocument = useCallback(() => {
+    const nextDocument = createDocumentRecord();
+    const nextDocuments = captureCurrentDocument();
+    const updatedDocuments = [...nextDocuments, nextDocument];
+    setDocuments(updatedDocuments);
+    setActiveDocumentId(nextDocument.id);
+    applyDocumentToEditor(nextDocument);
+    persistWorkspace(updatedDocuments, nextDocument.id);
+  }, [applyDocumentToEditor, captureCurrentDocument, persistWorkspace]);
+
+  const closeDocument = useCallback(
+    (documentId: string) => {
+      if (documents.length <= 1) {
+        return;
+      }
+
+      const nextDocuments = documents.filter(
+        (document) => document.id !== documentId,
+      );
+      setDocuments(nextDocuments);
+
+      if (activeDocumentId === documentId) {
+        const nextActive =
+          nextDocuments[nextDocuments.length - 1] ?? nextDocuments[0] ?? null;
+        setActiveDocumentId(nextActive?.id ?? null);
+        if (nextActive) {
+          applyDocumentToEditor(nextActive);
+        }
+        persistWorkspace(nextDocuments, nextActive?.id ?? null);
+      } else {
+        persistWorkspace(nextDocuments, activeDocumentId);
+      }
+    },
+    [activeDocumentId, applyDocumentToEditor, documents, persistWorkspace],
+  );
+
+  const openSceneInNewTab = useCallback(
+    async (source: DocumentSource = "local-file") => {
+      try {
+        const file = await fileOpen({
+          description: "Excalidraw files",
+        });
+        const result = await loadSceneOrLibraryFromBlob(
+          file,
+          null,
+          null,
+          file.handle,
+        );
+        if (result.type !== MIME_TYPES.excalidraw) {
+          setErrorMessage(t("alerts.couldNotLoadInvalidFile"));
+          return;
+        }
+        const nextDocuments = captureCurrentDocument();
+        const nextDocument = createDocumentRecord({
+          title:
+            result.data.appState?.name ??
+            file.name.replace(/\.excalidraw$/i, ""),
+          source,
+          snapshot: {
+            elements: result.data.elements ?? [],
+            appState: result.data.appState ?? { name: null },
+            files: result.data.files ?? {},
+          },
+        });
+        const updatedDocuments = [...nextDocuments, nextDocument];
+        setDocuments(updatedDocuments);
+        setActiveDocumentId(nextDocument.id);
+        applyDocumentToEditor(nextDocument);
+        persistWorkspace(updatedDocuments, nextDocument.id);
+      } catch (error: any) {
+        if (error?.name !== "AbortError") {
+          setErrorMessage(
+            error?.message || t("alerts.couldNotLoadInvalidFile"),
+          );
+        }
+      }
+    },
+    [applyDocumentToEditor, captureCurrentDocument, persistWorkspace],
   );
 
   const onExportToBackend = async (
@@ -908,15 +1416,83 @@ const ExcalidrawWrapper = () => {
         "is-collaborating": isCollaborating,
       })}
     >
+      <div className="excalidraw-app-tabs">
+        <div className="excalidraw-app-tabs__list">
+          {documents.map((document) => (
+            <button
+              key={document.id}
+              type="button"
+              className={clsx("excalidraw-app-tabs__tab", {
+                "is-active": document.id === activeDocumentId,
+              })}
+              onClick={() => switchToDocument(document.id)}
+            >
+              <span className="excalidraw-app-tabs__title">
+                {document.title}
+              </span>
+              {document.dirty && (
+                <span className="excalidraw-app-tabs__dirty" />
+              )}
+              {documents.length > 1 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="excalidraw-app-tabs__close"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeDocument(document.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      closeDocument(document.id);
+                    }
+                  }}
+                >
+                  ×
+                </span>
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="excalidraw-app-tabs__add"
+            onClick={createBlankDocument}
+          >
+            +
+          </button>
+        </div>
+      </div>
       <Excalidraw
         onChange={onChange}
         onExport={onExport}
-        initialData={initialStatePromiseRef.current.promise}
+        onSceneFileOpen={async (data, file) => {
+          const nextDocuments = captureCurrentDocument();
+          const nextDocument = createDocumentRecord({
+            title:
+              data.appState?.name ?? file.name.replace(/\.excalidraw$/i, ""),
+            source: "drag-drop",
+            snapshot: {
+              elements: data.elements ?? [],
+              appState: data.appState ?? { name: null },
+              files: data.files ?? {},
+            },
+          });
+          const updatedDocuments = [...nextDocuments, nextDocument];
+          setDocuments(updatedDocuments);
+          setActiveDocumentId(nextDocument.id);
+          applyDocumentToEditor(nextDocument);
+          persistWorkspace(updatedDocuments, nextDocument.id);
+          return true;
+        }}
+        initialData={activeDocument?.snapshot ?? null}
         isCollaborating={isCollaborating}
         onPointerUpdate={collabAPI?.onPointerUpdate}
         UIOptions={{
           canvasActions: {
             toggleTheme: true,
+            loadScene: false,
             export: {
               onExportToBackend,
               renderCustomUI: excalidrawAPI
@@ -985,6 +1561,7 @@ const ExcalidrawWrapper = () => {
       >
         <AppMainMenu
           onCollabDialogOpen={onCollabDialogOpen}
+          onLoadScene={() => openSceneInNewTab()}
           isCollaborating={isCollaborating}
           isCollabEnabled={!isCollabDisabled}
           theme={appTheme}
@@ -993,6 +1570,7 @@ const ExcalidrawWrapper = () => {
         />
         <AppWelcomeScreen
           onCollabDialogOpen={onCollabDialogOpen}
+          onLoadScene={() => openSceneInNewTab()}
           isCollabEnabled={!isCollabDisabled}
         />
         <OverwriteConfirmDialog>

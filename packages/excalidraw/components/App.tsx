@@ -2885,7 +2885,10 @@ class App extends React.Component<AppProps, AppState> {
    */
   private resetScene = withBatchedUpdates(
     (opts?: { resetLoadingState: boolean }) => {
+      this.clearImageShapeCache();
       this.scene.replaceAllElements([]);
+      this.files = {};
+      this.imageCache.clear();
       this.setState((state) => ({
         ...getDefaultAppState(),
         isLoading: opts?.resetLoadingState ? false : state.isLoading,
@@ -12238,6 +12241,13 @@ class App extends React.Component<AppProps, AppState> {
       }
 
       if (ret.type === MIME_TYPES.excalidraw) {
+        if (
+          (await this.props.onSceneFileOpen?.(ret.data, file, fileHandle)) ===
+          true
+        ) {
+          return;
+        }
+
         // restore the fractional indices by mutating elements
         syncInvalidIndices(elements.concat(ret.data.elements));
 

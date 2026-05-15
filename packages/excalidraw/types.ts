@@ -607,6 +607,11 @@ export interface ExcalidrawProps {
     data: ClipboardData,
     event: ClipboardEvent | null,
   ) => Promise<boolean> | boolean;
+  onSceneFileOpen?: (
+    data: ImportedDataState,
+    file: File,
+    fileHandle: FileSystemFileHandle | null,
+  ) => Promise<boolean> | boolean;
   /**
    * Called when element(s) are duplicated so you can listen or modify as
    * needed.
