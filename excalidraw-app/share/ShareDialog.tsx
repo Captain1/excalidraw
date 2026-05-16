@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { atom, useAtom, useAtomValue } from "../app-jotai";
 import { activeRoomLinkAtom } from "../collab/Collab";
+import { supportsNativeShare } from "../runtime/platform";
 
 import "./ShareDialog.scss";
 import { QRCode } from "./QRCode";
@@ -67,7 +68,7 @@ const ActiveRoomDialog = ({
   const [, setJustCopied] = useState(false);
   const timerRef = useRef<number>(0);
   const ref = useRef<HTMLInputElement>(null);
-  const isShareSupported = "share" in navigator;
+  const isShareSupported = supportsNativeShare();
   const { onCopy, copyStatus } = useCopyStatus();
 
   const copyRoomLink = async () => {

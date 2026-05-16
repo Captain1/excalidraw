@@ -159,6 +159,13 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import {
+  desktopFileFromPayload,
+  getPendingDesktopFiles,
+  onDesktopFileOpened,
+  openExternalLink,
+} from "./runtime/desktop";
+import { supportsPWA } from "./runtime/platform";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -188,15 +195,17 @@ let pwaEvent: BeforeInstallPromptEvent | null = null;
 //
 // Also note that it will fire only if certain heuristics are met (user has
 // used the app for some time, etc.)
-window.addEventListener(
-  "beforeinstallprompt",
-  (event: BeforeInstallPromptEvent) => {
-    // prevent Chrome <= 67 from automatically showing the prompt
-    event.preventDefault();
-    // cache for later use
-    pwaEvent = event;
-  },
-);
+if (supportsPWA()) {
+  window.addEventListener(
+    "beforeinstallprompt",
+    (event: BeforeInstallPromptEvent) => {
+      // prevent Chrome <= 67 from automatically showing the prompt
+      event.preventDefault();
+      // cache for later use
+      pwaEvent = event;
+    },
+  );
+}
 
 let isSelfEmbedding = false;
 
@@ -234,6 +243,12 @@ const createBlankDocumentSnapshot = (): DocumentSnapshot => ({
   },
   files: {},
 });
+
+type OpenedSceneData = {
+  elements?: readonly ExcalidrawElement[] | null;
+  appState?: Partial<AppState> | null;
+  files?: BinaryFiles | null;
+};
 
 const getDocumentFiles = (
   elements: readonly ExcalidrawElement[],
@@ -1195,39 +1210,66 @@ const ExcalidrawWrapper = () => {
     [activeDocumentId, applyDocumentToEditor, documents, persistWorkspace],
   );
 
+  const appendSceneDocument = useCallback(
+    (
+      data: OpenedSceneData,
+      fileName: string,
+      source: DocumentSource = "local-file",
+    ) => {
+      const nextDocuments = captureCurrentDocument();
+      const nextDocument = createDocumentRecord({
+        title:
+          data.appState?.name ?? fileName.replace(/\.(excalidraw|json)$/i, ""),
+        source,
+        snapshot: {
+          elements: data.elements ?? [],
+          appState: data.appState ?? { name: null },
+          files: data.files ?? {},
+        },
+      });
+      const updatedDocuments = [...nextDocuments, nextDocument];
+      setDocuments(updatedDocuments);
+      setActiveDocumentId(nextDocument.id);
+      applyDocumentToEditor(nextDocument);
+      persistWorkspace(updatedDocuments, nextDocument.id);
+    },
+    [applyDocumentToEditor, captureCurrentDocument, persistWorkspace],
+  );
+
+  const handleOpenedFile = useCallback(
+    async (file: File, source: DocumentSource = "local-file") => {
+      const result = await loadSceneOrLibraryFromBlob(
+        file,
+        null,
+        null,
+        file.handle,
+      );
+
+      if (result.type === MIME_TYPES.excalidrawlib) {
+        if (!excalidrawAPI) {
+          return;
+        }
+
+        await excalidrawAPI.updateLibrary({
+          libraryItems: file,
+          merge: true,
+          openLibraryMenu: true,
+        });
+        return;
+      }
+
+      appendSceneDocument(result.data, file.name, source);
+    },
+    [appendSceneDocument, excalidrawAPI],
+  );
+
   const openSceneInNewTab = useCallback(
     async (source: DocumentSource = "local-file") => {
       try {
         const file = await fileOpen({
           description: "Excalidraw files",
         });
-        const result = await loadSceneOrLibraryFromBlob(
-          file,
-          null,
-          null,
-          file.handle,
-        );
-        if (result.type !== MIME_TYPES.excalidraw) {
-          setErrorMessage(t("alerts.couldNotLoadInvalidFile"));
-          return;
-        }
-        const nextDocuments = captureCurrentDocument();
-        const nextDocument = createDocumentRecord({
-          title:
-            result.data.appState?.name ??
-            file.name.replace(/\.excalidraw$/i, ""),
-          source,
-          snapshot: {
-            elements: result.data.elements ?? [],
-            appState: result.data.appState ?? { name: null },
-            files: result.data.files ?? {},
-          },
-        });
-        const updatedDocuments = [...nextDocuments, nextDocument];
-        setDocuments(updatedDocuments);
-        setActiveDocumentId(nextDocument.id);
-        applyDocumentToEditor(nextDocument);
-        persistWorkspace(updatedDocuments, nextDocument.id);
+        await handleOpenedFile(file, source);
       } catch (error: any) {
         if (error?.name !== "AbortError") {
           setErrorMessage(
@@ -1236,8 +1278,68 @@ const ExcalidrawWrapper = () => {
         }
       }
     },
-    [applyDocumentToEditor, captureCurrentDocument, persistWorkspace],
+    [handleOpenedFile],
   );
+
+  useEffect(() => {
+    if (!excalidrawAPI || !documents.length) {
+      return;
+    }
+
+    let disposed = false;
+    let stopListening = () => {};
+
+    const handleDesktopPayload = async (payload: {
+      path: string;
+      name: string;
+      contents: number[];
+    }) => {
+      try {
+        await handleOpenedFile(desktopFileFromPayload(payload));
+      } catch (error: any) {
+        if (!disposed && error?.name !== "AbortError") {
+          console.error(error);
+          setErrorMessage(
+            error?.message || t("alerts.couldNotLoadInvalidFile"),
+          );
+        }
+      }
+    };
+
+    void getPendingDesktopFiles()
+      .then(async (files) => {
+        for (const payload of files) {
+          if (disposed) {
+            return;
+          }
+          await handleDesktopPayload(payload);
+        }
+      })
+      .catch((error) => {
+        if (!disposed) {
+          console.error(error);
+        }
+      });
+
+    void onDesktopFileOpened(handleDesktopPayload)
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        stopListening = unlisten;
+      })
+      .catch((error) => {
+        if (!disposed) {
+          console.error(error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      stopListening();
+    };
+  }, [documents.length, excalidrawAPI, handleOpenedFile]);
 
   const onExportToBackend = async (
     exportedElements: readonly NonDeletedExcalidrawElement[],
@@ -1377,11 +1479,10 @@ const ExcalidrawWrapper = () => {
     icon: <div style={{ width: 14 }}>{ExcalLogo}</div>,
     keywords: ["plus", "cloud", "server"],
     perform: () => {
-      window.open(
+      void openExternalLink(
         `${
           import.meta.env.VITE_APP_PLUS_LP
         }/plus?utm_source=excalidraw&utm_medium=app&utm_content=command_palette`,
-        "_blank",
       );
     },
   };
@@ -1400,11 +1501,10 @@ const ExcalidrawWrapper = () => {
       "signup",
     ],
     perform: () => {
-      window.open(
+      void openExternalLink(
         `${
           import.meta.env.VITE_APP_PLUS_APP
         }?utm_source=excalidraw&utm_medium=app&utm_content=command_palette`,
-        "_blank",
       );
     },
   };
@@ -1468,22 +1568,7 @@ const ExcalidrawWrapper = () => {
         onChange={onChange}
         onExport={onExport}
         onSceneFileOpen={async (data, file) => {
-          const nextDocuments = captureCurrentDocument();
-          const nextDocument = createDocumentRecord({
-            title:
-              data.appState?.name ?? file.name.replace(/\.excalidraw$/i, ""),
-            source: "drag-drop",
-            snapshot: {
-              elements: data.elements ?? [],
-              appState: data.appState ?? { name: null },
-              files: data.files ?? {},
-            },
-          });
-          const updatedDocuments = [...nextDocuments, nextDocument];
-          setDocuments(updatedDocuments);
-          setActiveDocumentId(nextDocument.id);
-          applyDocumentToEditor(nextDocument);
-          persistWorkspace(updatedDocuments, nextDocument.id);
+          appendSceneDocument(data, file.name, "drag-drop");
           return true;
         }}
         initialData={activeDocument?.snapshot ?? null}
@@ -1553,10 +1638,18 @@ const ExcalidrawWrapper = () => {
           );
         }}
         onLinkOpen={(element, event) => {
-          if (element.link && isElementLink(element.link)) {
-            event.preventDefault();
-            excalidrawAPI?.scrollToContent(element.link, { animate: true });
+          if (!element.link) {
+            return;
           }
+
+          event.preventDefault();
+
+          if (isElementLink(element.link)) {
+            excalidrawAPI?.scrollToContent(element.link, { animate: true });
+            return;
+          }
+
+          void openExternalLink(element.link);
         }}
       >
         <AppMainMenu
@@ -1721,10 +1814,8 @@ const ExcalidrawWrapper = () => {
                 "community",
               ],
               perform: () => {
-                window.open(
+                void openExternalLink(
                   "https://github.com/excalidraw/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
                 );
               },
             },
@@ -1735,10 +1826,8 @@ const ExcalidrawWrapper = () => {
               predicate: true,
               keywords: ["twitter", "contact", "social", "community"],
               perform: () => {
-                window.open(
+                void openExternalLink(
                   "https://x.com/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
                 );
               },
             },
@@ -1760,10 +1849,8 @@ const ExcalidrawWrapper = () => {
                 "community",
               ],
               perform: () => {
-                window.open(
+                void openExternalLink(
                   "https://discord.gg/UexuTaE",
-                  "_blank",
-                  "noopener noreferrer",
                 );
               },
             },
@@ -1774,10 +1861,8 @@ const ExcalidrawWrapper = () => {
               predicate: true,
               keywords: ["features", "tutorials", "howto", "help", "community"],
               perform: () => {
-                window.open(
+                void openExternalLink(
                   "https://youtube.com/@excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
                 );
               },
             },
@@ -1818,7 +1903,7 @@ const ExcalidrawWrapper = () => {
             {
               label: t("labels.installPWA"),
               category: DEFAULT_CATEGORIES.app,
-              predicate: () => !!pwaEvent,
+              predicate: () => supportsPWA() && !!pwaEvent,
               perform: () => {
                 if (pwaEvent) {
                   pwaEvent.prompt();

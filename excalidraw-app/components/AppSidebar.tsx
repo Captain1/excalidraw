@@ -6,6 +6,7 @@ import {
 import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
 
+import { openExternalLink } from "../runtime/desktop";
 import "./AppSidebar.scss";
 
 export const AppSidebar = () => {
@@ -42,9 +43,13 @@ export const AppSidebar = () => {
             Make comments with Excalidraw+
           </div>
           <LinkButton
-            href={`${
-              import.meta.env.VITE_APP_PLUS_LP
-            }/plus?utm_source=excalidraw&utm_medium=app&utm_content=comments_promo#excalidraw-redirect`}
+            onClick={() =>
+              void openExternalLink(
+                `${
+                  import.meta.env.VITE_APP_PLUS_LP
+                }/plus?utm_source=excalidraw&utm_medium=app&utm_content=comments_promo#excalidraw-redirect`,
+              )
+            }
           >
             Sign up now
           </LinkButton>
@@ -66,9 +71,13 @@ export const AppSidebar = () => {
             Create presentations with Excalidraw+
           </div>
           <LinkButton
-            href={`${
-              import.meta.env.VITE_APP_PLUS_LP
-            }/plus?utm_source=excalidraw&utm_medium=app&utm_content=presentations_promo#excalidraw-redirect`}
+            onClick={() =>
+              void openExternalLink(
+                `${
+                  import.meta.env.VITE_APP_PLUS_LP
+                }/plus?utm_source=excalidraw&utm_medium=app&utm_content=presentations_promo#excalidraw-redirect`,
+              )
+            }
           >
             Sign up now
           </LinkButton>

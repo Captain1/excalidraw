@@ -3,13 +3,15 @@ import { FilledButton } from "./FilledButton";
 export const LinkButton = ({
   children,
   href,
+  onClick,
 }: {
-  href: string;
+  href?: string;
   children: React.ReactNode;
+  onClick?: () => void;
 }) => {
   return (
-    <a href={href} target="_blank" rel="noopener" className="link-button">
+    <button type="button" className="link-button" onClick={onClick}>
       <FilledButton>{children}</FilledButton>
-    </a>
+    </button>
   );
 };

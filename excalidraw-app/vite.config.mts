@@ -1,26 +1,50 @@
 import path from "path";
-import { defineConfig, loadEnv } from "vite";
+
 import react from "@vitejs/plugin-react";
-import svgrPlugin from "vite-plugin-svgr";
-import { ViteEjsPlugin } from "vite-plugin-ejs";
-import { VitePWA } from "vite-plugin-pwa";
+import { defineConfig, loadEnv } from "vite";
 import checker from "vite-plugin-checker";
+import { ViteEjsPlugin } from "vite-plugin-ejs";
 import { createHtmlPlugin } from "vite-plugin-html";
+import { VitePWA } from "vite-plugin-pwa";
 import Sitemap from "vite-plugin-sitemap";
+import svgrPlugin from "vite-plugin-svgr";
+
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
   // https://vitejs.dev/config/
+  const isDesktopApp = envVars.VITE_DESKTOP_APP === "true";
+  const tauriDevHost = process.env.TAURI_DEV_HOST;
+  const tauriTarget = process.env.TAURI_ENV_PLATFORM;
+  const isTauriDebug = process.env.TAURI_ENV_DEBUG === "true";
+
   return {
+    clearScreen: false,
     server: {
       port: Number(envVars.VITE_APP_PORT || 3000),
+      strictPort: isDesktopApp,
+      host: tauriDevHost || undefined,
+      hmr: tauriDevHost
+        ? {
+            protocol: "ws",
+            host: tauriDevHost,
+            port: 1421,
+          }
+        : undefined,
       // open the browser
-      open: true,
+      open: !isDesktopApp,
+      watch: isDesktopApp
+        ? {
+            ignored: ["**/src-tauri/**"],
+          }
+        : undefined,
     },
     // We need to specify the envDir since now there are no
     //more located in parallel with the vite.config.ts file but in parent dir
     envDir: "../",
+    envPrefix: ["VITE_", "TAURI_ENV_*"],
     resolve: {
       alias: [
         {
@@ -86,6 +110,12 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: "build",
+      target: isDesktopApp
+        ? tauriTarget === "windows"
+          ? "chrome105"
+          : "safari13"
+        : undefined,
+      minify: isDesktopApp ? (isTauriDebug ? false : "esbuild") : undefined,
       rollupOptions: {
         output: {
           assetFileNames(chunkInfo) {
@@ -120,7 +150,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
-      sourcemap: true,
+      sourcemap: isDesktopApp ? isTauriDebug : true,
       // don't auto-inline small assets (i.e. fonts hosted on CDN)
       assetsInlineLimit: 0,
     },
@@ -149,9 +179,10 @@ export default defineConfig(({ mode }) => {
       ViteEjsPlugin(),
       VitePWA({
         registerType: "autoUpdate",
+        disable: isDesktopApp,
         devOptions: {
           /* set this flag to true to enable in Development mode */
-          enabled: envVars.VITE_APP_ENABLE_PWA === "true",
+          enabled: !isDesktopApp && envVars.VITE_APP_ENABLE_PWA === "true",
         },
 
         workbox: {

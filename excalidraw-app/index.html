@@ -107,6 +107,7 @@
       // Putting into index.html for best performance (can't redirect on server
       // due to location.hash checks).
       if (
+        window.__TAURI_INTERNALS__ == null &&
         window.location.pathname === "/" &&
         !window.location.hash &&
         !window.location.search &&

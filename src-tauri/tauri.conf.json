@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Excalidraw",
+  "version": "0.1.0",
+  "identifier": "com.excalidraw.desktop",
+  "build": {
+    "beforeDevCommand": "yarn desktop:frontend:dev",
+    "beforeBuildCommand": "yarn desktop:frontend:build",
+    "devUrl": "http://localhost:3001",
+    "frontendDist": "../excalidraw-app/build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Excalidraw",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1024,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "fileAssociations": [
+      {
+        "ext": ["excalidraw"],
+        "mimeType": "application/vnd.excalidraw+json",
+        "description": "Excalidraw scene"
+      },
+      {
+        "ext": ["excalidrawlib"],
+        "mimeType": "application/vnd.excalidrawlib+json",
+        "description": "Excalidraw library"
+      }
+    ],
+    "icon": ["../public/favicon-32x32.png", "../public/apple-touch-icon.png", "../public/android-chrome-512x512.png", "../public/favicon.ico"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

@@ -103,7 +103,7 @@ export const getMimeType = (blob: Blob | string): string => {
   return "";
 };
 
-export const getFileHandleType = (handle: FileSystemFileHandle | null) => {
+export const getFileHandleType = (handle: ExcalidrawFileHandle | null) => {
   if (!handle) {
     return null;
   }
@@ -118,8 +118,8 @@ export const isImageFileHandleType = (
 };
 
 export const isImageFileHandle = (
-  handle: FileSystemFileHandle | null,
-): handle is FileSystemFileHandle => {
+  handle: ExcalidrawFileHandle | null,
+): handle is ExcalidrawFileHandle => {
   const type = getFileHandleType(handle);
   return type === "png" || type === "svg";
 };
@@ -140,8 +140,8 @@ export const loadSceneOrLibraryFromBlob = async (
   /** @see restore.localAppState */
   localAppState: AppState | null,
   localElements: readonly ExcalidrawElement[] | null,
-  /** FileSystemFileHandle. Defaults to `blob.handle` if defined, otherwise null. */
-  fileHandle?: FileSystemFileHandle | null,
+  /** File handle. Defaults to `blob.handle` if defined, otherwise null. */
+  fileHandle?: ExcalidrawFileHandle | null,
 ) => {
   const contents = await parseFileContents(blob);
   let data;
@@ -199,8 +199,8 @@ export const loadFromBlob = async (
   /** @see restore.localAppState */
   localAppState: AppState | null,
   localElements: readonly ExcalidrawElement[] | null,
-  /** FileSystemFileHandle. Defaults to `blob.handle` if defined, otherwise null. */
-  fileHandle?: FileSystemFileHandle | null,
+  /** File handle. Defaults to `blob.handle` if defined, otherwise null. */
+  fileHandle?: ExcalidrawFileHandle | null,
 ) => {
   const ret = await loadSceneOrLibraryFromBlob(
     blob,

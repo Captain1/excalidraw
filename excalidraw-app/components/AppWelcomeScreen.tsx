@@ -5,6 +5,7 @@ import { WelcomeScreen } from "@excalidraw/excalidraw/index";
 import React from "react";
 
 import { isExcalidrawPlusSignedUser } from "../app_constants";
+import { openExternalLink } from "../runtime/desktop";
 
 export const AppWelcomeScreen: React.FC<{
   onCollabDialogOpen: () => any;
@@ -20,15 +21,20 @@ export const AppWelcomeScreen: React.FC<{
       .map((bit, idx) => {
         if (bit === "Excalidraw+") {
           return (
-            <a
+            <button
+              type="button"
               style={{ pointerEvents: POINTER_EVENTS.inheritFromUI }}
-              href={`${
-                import.meta.env.VITE_APP_PLUS_APP
-              }?utm_source=excalidraw&utm_medium=app&utm_content=welcomeScreenSignedInUser`}
+              onClick={() =>
+                void openExternalLink(
+                  `${
+                    import.meta.env.VITE_APP_PLUS_APP
+                  }?utm_source=excalidraw&utm_medium=app&utm_content=welcomeScreenSignedInUser`,
+                )
+              }
               key={idx}
             >
               Excalidraw+
-            </a>
+            </button>
           );
         }
         return bit;
@@ -72,15 +78,19 @@ export const AppWelcomeScreen: React.FC<{
             />
           )}
           {!isExcalidrawPlusSignedUser && (
-            <WelcomeScreen.Center.MenuItemLink
-              href={`${
-                import.meta.env.VITE_APP_PLUS_LP
-              }/plus?utm_source=excalidraw&utm_medium=app&utm_content=welcomeScreenGuest`}
+            <WelcomeScreen.Center.MenuItem
+              onSelect={() =>
+                void openExternalLink(
+                  `${
+                    import.meta.env.VITE_APP_PLUS_LP
+                  }/plus?utm_source=excalidraw&utm_medium=app&utm_content=welcomeScreenGuest`,
+                )
+              }
               shortcut={null}
               icon={loginIcon}
             >
               Sign up
-            </WelcomeScreen.Center.MenuItemLink>
+            </WelcomeScreen.Center.MenuItem>
           )}
         </WelcomeScreen.Center.Menu>
       </WelcomeScreen.Center>

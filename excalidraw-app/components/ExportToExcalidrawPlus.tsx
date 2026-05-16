@@ -28,6 +28,7 @@ import type {
 import { FILE_UPLOAD_MAX_BYTES } from "../app_constants";
 import { encodeFilesForUpload } from "../data/FileManager";
 import { loadFirebaseStorage, saveFilesToFirebase } from "../data/firebase";
+import { openExternalLink } from "../runtime/desktop";
 
 export const exportToExcalidrawPlus = async (
   elements: readonly NonDeletedExcalidrawElement[],
@@ -80,7 +81,7 @@ export const exportToExcalidrawPlus = async (
     });
   }
 
-  window.open(
+  await openExternalLink(
     `${
       import.meta.env.VITE_APP_PLUS_APP
     }/import?excalidraw=${id},${encryptionKey}`,

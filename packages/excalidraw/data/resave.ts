@@ -15,7 +15,7 @@ export const resaveAsImageWithScene = async (
     appState: AppState;
     files: BinaryFiles;
   }>,
-  fileHandle: FileSystemFileHandle,
+  fileHandle: ExcalidrawFileHandle,
   filename: string,
 ) => {
   const fileHandleType = getFileHandleType(fileHandle);

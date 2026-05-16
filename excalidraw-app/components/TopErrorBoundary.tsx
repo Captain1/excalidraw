@@ -2,6 +2,8 @@ import { t } from "@excalidraw/excalidraw/i18n";
 import * as Sentry from "@sentry/browser";
 import React from "react";
 
+import { openExternalLink } from "../runtime/desktop";
+
 interface TopErrorBoundaryState {
   hasError: boolean;
   sentryEventId: string;
@@ -84,10 +86,8 @@ export class TopErrorBoundary extends React.Component<
       console.error(error);
     }
 
-    window.open(
+    await openExternalLink(
       `https://github.com/excalidraw/excalidraw/issues/new?body=${body}`,
-      "_blank",
-      "noopener noreferrer",
     );
   }
 

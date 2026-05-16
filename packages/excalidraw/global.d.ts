@@ -1,3 +1,26 @@
+interface ExcalidrawDesktopFileHandle {
+  __EXCALIDRAW_DESKTOP_FILE_HANDLE__: true;
+  kind: "file";
+  name: string;
+  path: string;
+}
+
+type ExcalidrawFileHandle = FileSystemFileHandle | ExcalidrawDesktopFileHandle;
+
+type ExcalidrawDesktopOpenFileOptions = {
+  description: string;
+  extensions?: string[];
+  multiple?: boolean;
+};
+
+type ExcalidrawDesktopSaveFileOptions = {
+  description: string;
+  name: string;
+  extension: string;
+  mimeTypes?: string[];
+  fileHandle?: ExcalidrawFileHandle | null;
+};
+
 interface Window {
   ClipboardItem: any;
   __EXCALIDRAW_SHA__: string | undefined;
@@ -5,6 +28,14 @@ interface Window {
   EXCALIDRAW_THROTTLE_RENDER: boolean | undefined;
   DEBUG_FRACTIONAL_INDICES: boolean | undefined;
   EXCALIDRAW_EXPORT_SOURCE: string;
+  __EXCALIDRAW_DESKTOP__?: {
+    openExternal: (url: string) => Promise<void>;
+    openFile: (opts: ExcalidrawDesktopOpenFileOptions) => Promise<File | File[]>;
+    saveFile: (
+      blob: Blob | Promise<Blob>,
+      opts: ExcalidrawDesktopSaveFileOptions,
+    ) => Promise<ExcalidrawDesktopFileHandle>;
+  };
   gtag: Function;
   sa_event: Function;
   fathom: { trackEvent: Function };
@@ -52,7 +83,7 @@ declare module "png-chunks-extract" {
 // -----------------------------------------------------------------------------
 
 interface Blob {
-  handle?: FileSystemFileHandle;
+  handle?: ExcalidrawFileHandle;
   name?: string;
 }
 

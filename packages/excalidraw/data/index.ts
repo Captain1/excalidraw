@@ -114,7 +114,7 @@ export const exportCanvas = async (
     viewBackgroundColor: string;
     /** filename, if applicable */
     name?: string;
-    fileHandle?: FileSystemFileHandle | null;
+    fileHandle?: ExcalidrawFileHandle | null;
     exportingFrame: ExcalidrawFrameLikeElement | null;
   },
 ) => {

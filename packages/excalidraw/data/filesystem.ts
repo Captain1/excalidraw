@@ -1,12 +1,22 @@
 import {
   fileOpen as _fileOpen,
   fileSave as _fileSave,
-  supported as nativeFileSystemSupported,
+  supported as browserNativeFileSystemSupported,
 } from "browser-fs-access";
 
 import { MIME_TYPES } from "@excalidraw/common";
 
 import { normalizeFile } from "./blob";
+
+const isDesktopBridgeAvailable = () => !!window.__EXCALIDRAW_DESKTOP__;
+
+const isDesktopFileHandle = (
+  handle: ExcalidrawFileHandle | null | undefined,
+): handle is ExcalidrawDesktopFileHandle =>
+  !!handle && "__EXCALIDRAW_DESKTOP_FILE_HANDLE__" in handle;
+
+export const nativeFileSystemSupported =
+  browserNativeFileSystemSupported || isDesktopBridgeAvailable();
 
 type FILE_EXTENSION = Exclude<keyof typeof MIME_TYPES, "binary">;
 
@@ -31,6 +41,20 @@ export const fileOpen = async <M extends boolean | undefined = false>(opts: {
     return acc.concat(`.${ext}`);
   }, [] as string[]);
 
+  if (window.__EXCALIDRAW_DESKTOP__) {
+    const files = await window.__EXCALIDRAW_DESKTOP__.openFile({
+      description: opts.description,
+      extensions,
+      multiple: opts.multiple,
+    });
+
+    if (Array.isArray(files)) {
+      return (await Promise.all(files.map((file) => normalizeFile(file)))) as RetType;
+    }
+
+    return (await normalizeFile(files)) as RetType;
+  }
+
   const files = await _fileOpen({
     description: opts.description,
     extensions,
@@ -46,7 +70,7 @@ export const fileOpen = async <M extends boolean | undefined = false>(opts: {
   return (await normalizeFile(files)) as RetType;
 };
 
-export const fileSave = (
+export const fileSave = async (
   blob: Blob | Promise<Blob>,
   opts: {
     /** supply without the extension */
@@ -56,9 +80,20 @@ export const fileSave = (
     mimeTypes?: string[];
     description: string;
     /** existing FileSystemFileHandle */
-    fileHandle?: FileSystemFileHandle | null;
+    fileHandle?: ExcalidrawFileHandle | null;
   },
 ) => {
+  if (window.__EXCALIDRAW_DESKTOP__) {
+    const handle = await window.__EXCALIDRAW_DESKTOP__.saveFile(blob, {
+      description: opts.description,
+      name: `${opts.name}.${opts.extension}`,
+      extension: opts.extension,
+      mimeTypes: opts.mimeTypes,
+      fileHandle: opts.fileHandle,
+    });
+    return handle;
+  }
+
   return _fileSave(
     blob,
     {
@@ -67,9 +102,7 @@ export const fileSave = (
       extensions: [`.${opts.extension}`],
       mimeTypes: opts.mimeTypes,
     },
-    opts.fileHandle,
+    isDesktopFileHandle(opts.fileHandle) ? null : opts.fileHandle,
     false,
   );
 };
-
-export { nativeFileSystemSupported };

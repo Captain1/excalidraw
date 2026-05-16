@@ -441,7 +441,7 @@ export interface AppState {
   offsetTop: number;
   offsetLeft: number;
 
-  fileHandle: FileSystemFileHandle | null;
+  fileHandle: ExcalidrawFileHandle | null;
   collaborators: Map<SocketId, Collaborator>;
   stats: {
     open: boolean;
@@ -610,7 +610,7 @@ export interface ExcalidrawProps {
   onSceneFileOpen?: (
     data: ImportedDataState,
     file: File,
-    fileHandle: FileSystemFileHandle | null,
+    fileHandle: ExcalidrawFileHandle | null,
   ) => Promise<boolean> | boolean;
   /**
    * Called when element(s) are duplicated so you can listen or modify as
