@@ -38,7 +38,7 @@
         "description": "Excalidraw library"
       }
     ],
-    "icon": ["icons/icon.png"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"
