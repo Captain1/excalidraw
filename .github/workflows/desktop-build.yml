@@ -54,12 +54,24 @@ jobs:
       - name: Build desktop app
         run: yarn desktop:build:ci
 
-      - name: Upload desktop binary
+      - name: Upload macOS app bundle
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-binary-${{ matrix.os }}
+          name: desktop-app-${{ matrix.os }}
           path: |
-            src-tauri/target/release/excalidraw-desktop*
-            !src-tauri/target/release/**/*.pdb
+            src-tauri/target/release/bundle/macos/*.app
+            src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installer-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
           retention-days: 7

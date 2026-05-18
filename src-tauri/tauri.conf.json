@@ -38,9 +38,10 @@
         "description": "Excalidraw library"
       }
     ],
-    "icon": ["../public/maskable_icon_x192.png", "../public/maskable_icon_x512.png", "../public/favicon.ico"],
+    "icon": ["icons/icon.png"],
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
     }
   }
 }
