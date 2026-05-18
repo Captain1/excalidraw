@@ -38,7 +38,7 @@
         "description": "Excalidraw library"
       }
     ],
-    "icon": ["../public/favicon-32x32.png", "../public/apple-touch-icon.png", "../public/android-chrome-512x512.png", "../public/favicon.ico"],
+    "icon": ["../public/maskable_icon_x192.png", "../public/maskable_icon_x512.png", "../public/favicon.ico"],
     "macOS": {
       "minimumSystemVersion": "12.0"
     }
